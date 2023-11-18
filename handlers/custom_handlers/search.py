@@ -13,7 +13,7 @@ def bot_lowprice(message: Message):
 def bot_city_req(message: Message):
     bot.reply_to(message, f"Обработка запроса может занять некоторое время.")
     city = message.text.strip().lower()
-    querystring = {"q": "new york", "locale": "en_US", "langid": "1033", "siteid": "300000001"}
+    querystring = {"q": "new york"}
     ans = api_request('locations/v3/search', querystring, 'GET')
     string = "Вот что удалось найти:\n"
     k = 1

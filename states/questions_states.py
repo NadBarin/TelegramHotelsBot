@@ -1,7 +1,7 @@
 from telebot.handler_backends import State, StatesGroup
 
 
-class QuestionsStates:
+class QuestionsStates(StatesGroup):
     city = State()
     checkInDate = State()
     checkOutDate = State()
