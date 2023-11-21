@@ -124,28 +124,100 @@ def cal1(c):
 
 @bot.message_handler(state=QuestionsStates.adults)
 def get_adults(message: Message) -> None:
+    '''Запрашивает и записывает количество взрслых для которых нужны номера.'''
     adults = message.text.strip()
-    if not adults.isdigit():
+    if not adults.isdigit() or adults == '0':
         bot.send_message(message.from_user.id,
-                         'Количество взрослых людей должно быть указанно одной цифрой. Попробуйте ещё раз')
+                         'Количество взрослых людей должно быть указанно одной цифрой > 0. Попробуйте ещё раз')
     else:
         data["adults"] = int(adults)
-        print(data)
         bot.set_state(message.from_user.id, QuestionsStates.children, message.chat.id)
         bot.send_message(message.from_user.id,
                          'Хорошо. Теперь введите(цифрой) на сколько детей нужны места.')
 
 
-'''  
+counter = 0
+
+
 @bot.message_handler(state=QuestionsStates.children)
 def get_children(message: Message) -> None:
+    '''Запрашивает кличество детей и переходит к функции, которая запишет возрасты.'''
     children = message.text.strip()
     if not children.isdigit():
         bot.send_message(message.from_user.id,
                          'Количество детей должно быть указанно одной цифрой. Попробуйте ещё раз')
     else:
-        data["children"] = int(children)
-        bot.set_state(message.from_user.id, QuestionsStates.children, message.chat.id)
+        if children != '0':
+            data["children"] = []
+            bot.send_message(message.from_user.id,
+                             f'Введите возраст 1-го ребёнка.')
+            bot.register_next_step_handler(message, get_children_age_steps, children)
+        else:
+            bot.set_state(message.from_user.id, QuestionsStates.currency, message.chat.id)
+            bot.send_message(message.from_user.id,
+                             'Хорошо. Теперь латинскими буквами введите аббревиатуру валюты, которой хотите платить '
+                             'за проживание.')
+
+
+counter: int = 1
+
+
+def get_children_age_steps(message: Message, children: int):
+    "Запрашивает и записывает возрасты детей."
+    age = message.text.strip()
+    data["children"].append({"age": int(age)})
+    global counter
+    if counter < int(children):
+        counter += 1
         bot.send_message(message.from_user.id,
-                         'Хорошо. Теперь введите(цифрой) на сколько детей нужны места.')
-'''
+                         f'Введите возраст {counter}-го ребёнка.')
+        bot.register_next_step_handler(message, get_children_age_steps, children)
+    else:
+        counter = 1
+        bot.set_state(message.from_user.id, QuestionsStates.currency, message.chat.id)
+        bot.send_message(message.from_user.id,
+                         'Хорошо. Теперь латинскими буквами введите аббревиатуру валюты, которой хотите платить '
+                         'за проживание.')
+
+@bot.message_handler(state=QuestionsStates.currency)
+def get_currency(message: Message) -> None:
+    '''Запрашивает валюту.'''
+    currency = message.text.strip().upper()
+    if len(currency) > 3 or not currency.isalpha():
+        bot.send_message(message.from_user.id,
+                         'Валюта должна быть указана тремя латинскими буквами')
+    else:
+        data["currency"] = currency
+        bot.set_state(message.from_user.id, QuestionsStates.price_min, message.chat.id)
+        bot.send_message(message.from_user.id,
+                     'Хорошо. Теперь ввендите минимальную цену за проживание.')
+
+
+@bot.message_handler(state=QuestionsStates.price_min)
+def get_currency(message: Message) -> None:
+    '''Запрашивает минимальную цену за проживание.'''
+    price_min = message.text.strip()
+    if not price_min.isdigit():
+        bot.send_message(message.from_user.id,
+                         'Цена должна быть указана цифрой. попробуйте ещё раз.')
+    else:
+        data["price_min"] = int(price_min)
+        bot.set_state(message.from_user.id, QuestionsStates.price_max, message.chat.id)
+        bot.send_message(message.from_user.id,
+                     'Хорошо. Теперь ввендите максимальную цену за проживание.')
+
+@bot.message_handler(state=QuestionsStates.price_max)
+def get_currency(message: Message) -> None:
+    '''Запрашивает минимальную цену за проживание.'''
+    price_max = message.text.strip()
+    if not price_max.isdigit():
+        bot.send_message(message.from_user.id,
+                         'Цена должна быть указана цифрой. попробуйте ещё раз.')
+    else:
+        if data["price_min"] > int(price_max):
+            bot.send_message(message.from_user.id,
+                             'Максимальная цена должна быть больше минимальной. попробуйте ещё раз.')
+        data["price_max"] = int(price_max)
+        bot.send_message(message.from_user.id,
+                     'Хорошая работа! Сейчас попробуем найти что то подхдящее.')
+        print(data)

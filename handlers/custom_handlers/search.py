@@ -20,6 +20,7 @@ def bot_city_req(message: Message):
     for item in ans['sr']:
         if "gaiaId" in item.keys():
             payload = {
+                "currency": "USD",
                 "eapid": 1,
                 "destination": {"regionId": item['gaiaId']},
                 "checkInDate": {
