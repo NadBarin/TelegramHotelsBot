@@ -1,17 +1,25 @@
 from loader import bot
 from states.questions_states import QuestionsStates
-from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from handlers.custom_handlers.universal_req import api_request
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+from random import choice
 from loguru import logger
 import json
 
 data = {"eapid": 1}
 
 
-@bot.message_handler(commands=['survey'])
+@bot.message_handler(commands=['lowprice', 'guest_rating', 'bestdeal'])
 def survey(message: Message) -> None:
-    '''Начало опроса. меняется состояние и запрашивается первый параметр поиска: город.'''
+    '''Начало опроса. Проверяется команда и сохряняется нужный параметр сортировки поиска. Меняется состояние и
+    запрашивается параметр поиска: город.'''
+    if message.text == '/lowprice':
+        data['sort'] = "PRICE_LOW_TO_HIGH"
+    elif message.text == '/guest_rating':
+        data['sort'] = "REVIEW"
+    elif message.text == '/bestdeal':
+        data['sort'] = "DISTANCE"
     bot.set_state(message.from_user.id, QuestionsStates.city, message.chat.id)
     bot.send_message(message.from_user.id, 'Введите город в котором будет производиться поиск отеля.')
 
@@ -38,9 +46,7 @@ def get_city(message: Message) -> None:
                     keyboards_cities.add(
                         InlineKeyboardButton(text=item["regionNames"]["fullName"],
                                              callback_data='gaiaId.' + item["gaiaId"]))
-
             bot.send_message(message.from_user.id, 'Пожалуйста уточните местоположение.', reply_markup=keyboards_cities)
-            bot.set_state(message.from_user.id, QuestionsStates.checkInDate, message.chat.id)
     else:
         bot.send_message(message.from_user.id,
                          'Название города должно содержать в себе только буквы. Попробуйте ещё раз')
@@ -48,26 +54,19 @@ def get_city(message: Message) -> None:
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('gaiaId.'))
-def get_callback(call):
-    '''Записывает id выбранного пользователем города после нажатия пользователем соответствующей кнопки.'''
+def get_callback_cal_in(call):
+    '''Записывает id выбранного пользователем города после нажатия пользователем соответствующей кнопки.
+    Запускает календарь для планируемого заезда.'''
     data["destination"] = {}
-    data["destination"]["regionId"] = call.data[6:]
-    bot.send_message(call.from_user.id, f'Понял-понял. {data["id"]}')
-
-
-@bot.message_handler(commands=['start1'])
-def start1(message: Message):
-    '''Запускает календарь для планируемого заезда.'''
-    # do not forget to put calendar_id
+    data["destination"]["regionId"] = call.data[7:]
     calendar, step = DetailedTelegramCalendar(calendar_id=1, locale='ru').build()
-    bot.send_message(message.chat.id,
+    bot.send_message(call.message.chat.id,
                      f"Теперь нужно выбрать дату планируемого заезда. Выберете год",
                      reply_markup=calendar)
 
 
-def start2(message: Message):
+def cal_out(message: Message):
     '''Запускает календарь для планируемого выезда.'''
-    # do not forget to put calendar_id
     calendar, step = DetailedTelegramCalendar(calendar_id=2, locale='ru').build()
     bot.send_message(message.chat.id,
                      f"Теперь нужно выбрать дату планируемого выезда. Выберете год",
@@ -77,7 +76,6 @@ def start2(message: Message):
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1))
 def cal1(c):
     '''Проходит все этапы календаря и записывает результат в data.'''
-    # calendar_id is used here too, since the new keyboard is made
     result, key, step = DetailedTelegramCalendar(calendar_id=1, locale='ru').process(c.data)
     if not result and key:
         if LSTEP[step] == 'month':
@@ -98,14 +96,13 @@ def cal1(c):
         bot.edit_message_text(f"Вы выбрали {result} как дату вьезда.",
                               c.message.chat.id,
                               c.message.message_id)
-        start2(c.message)
+        cal_out(c.message)
 
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=2))
-def cal1(c):
+def cal2(c):
     '''Проходит все этапы календаря и записывает результат в data. После этого делает запрос инфрмации про
     количество взрослых.'''
-    # calendar_id is used here too, since the new keyboard is made
     result, key, step = DetailedTelegramCalendar(calendar_id=2, locale='ru').process(c.data)
     if not result and key:
         if LSTEP[step] == 'month':
@@ -245,12 +242,13 @@ def get_price_max(message: Message) -> None:
         data["filters"]["availableFilter"] = 'SHOW_AVAILABLE_ONLY'
         bot.set_state(message.from_user.id, QuestionsStates.resultsSize, message.chat.id)
         bot.send_message(message.from_user.id,
-                         'Хорошо. Теперь введите количество записей, которые вывести по данному запросу.')
+                         'Хорошо. Теперь введите максимальное количество записей, которые вывести по данному запросу.')
 
 
 @bot.message_handler(state=QuestionsStates.resultsSize)
 def get_results_size(message: Message):
-    "Запрашивает количество результатов, которые нужно вывести."
+    """Запрашивает количество результатов, которые нужно вывести. Проводит поиск нужных данных по введённым и выводит
+    результат."""
     size = message.text.strip()
     if not size.isdigit():
         bot.send_message(message.from_user.id,
@@ -260,5 +258,43 @@ def get_results_size(message: Message):
         data["resultsStartingIndex"] = 0
         data["resultsSize"] = int(size)
         bot.send_message(message.from_user.id,
-                         'Хорошая работа! Сейчас попробуем найти что то подхдящее.')
-        print(data)
+                         'Хорошая работа! Сейчас попробуем найти что то подходящее.')
+        response = api_request('properties/v2/list', data, 'POST')
+        with open("file.txt", "w", encoding='UTF-8') as file:
+            json.dump(response, file, indent=4, sort_keys=True)
+        hotels_data = {}
+        for hotel in response['data']['propertySearch']['properties']:
+            try:
+                data_for_detales = {
+                    "currency": data["currency"],
+                    "eapid": 1,
+                    "propertyId": hotel["id"]
+                }
+                response_for_detales = api_request('properties/v2/get-summary', data_for_detales, 'POST')
+                # print(json.dumps(response_for_detales["data"]["propertyInfo"], indent=4, sort_keys=True))
+                hotels_data[hotel["id"]] = {
+                    'name': hotel["name"],
+                    'id': hotel["id"],
+                    'address': response_for_detales["data"]["propertyInfo"]["summary"]["location"]["address"][
+                        "addressLine"],
+                    'distance': hotel["destinationInfo"]["distanceFromDestination"]["value"],
+                    'unit': hotel["destinationInfo"]["distanceFromDestination"]["unit"],
+                    'price': round(hotel['price']['lead']['amount'], 2),
+                    'images': [url["image"]["url"] for url in
+                               response_for_detales['data']['propertyInfo']["propertyGallery"]["images"]]
+                }
+            except (TypeError, KeyError):
+                continue
+        for key, post in hotels_data.items():
+            images = post['images']
+            medias = []
+            for i in range(6):
+                temp = choice(images)
+                images.remove(temp)
+                medias.append(InputMediaPhoto(media=temp))
+            bot.send_media_group(message.chat.id, medias)
+            bot.send_message(message.chat.id,
+                             f'Название: {post["name"]}\n'
+                             f'Адрес: {post["address"]}\n'
+                             f'Расстояние до центра: {post["distance"]} {post["unit"].lower()}\n'
+                             f'Стоимость проживания в сутки: {post["price"]} {data["currency"]}')
