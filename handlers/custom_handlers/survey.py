@@ -1,13 +1,16 @@
+import datetime
+import peewee
+from database.history import User
 from loader import bot
 from states.questions_states import QuestionsStates
 from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from handlers.custom_handlers.universal_req import api_request
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from random import choice
-from loguru import logger
 import json
 
 data = {"eapid": 1}
+citydb = ''
 
 
 @bot.message_handler(commands=['lowprice', 'guest_rating', 'bestdeal'])
@@ -40,6 +43,8 @@ def get_city(message: Message) -> None:
         except:
             bot.send_message(message.from_user.id, 'Кажется есть какая то проблема.')
         else:
+            global citydb
+            citydb = city
             keyboards_cities = InlineKeyboardMarkup()
             for item in cities['sr']:
                 if "gaiaId" in item.keys():
@@ -247,8 +252,7 @@ def get_price_max(message: Message) -> None:
 
 @bot.message_handler(state=QuestionsStates.resultsSize)
 def get_results_size(message: Message):
-    """Запрашивает количество результатов, которые нужно вывести. Проводит поиск нужных данных по введённым и выводит
-    результат."""
+    """Запрашивает количество результатов, которые нужно вывести. Проводит поиск нужных данных по введённым данным. Отправляет результат пользователю."""
     size = message.text.strip()
     if not size.isdigit():
         bot.send_message(message.from_user.id,
@@ -280,21 +284,59 @@ def get_results_size(message: Message):
                     'distance': hotel["destinationInfo"]["distanceFromDestination"]["value"],
                     'unit': hotel["destinationInfo"]["distanceFromDestination"]["unit"],
                     'price': round(hotel['price']['lead']['amount'], 2),
+                    'currency': data['currency'],
                     'images': [url["image"]["url"] for url in
                                response_for_detales['data']['propertyInfo']["propertyGallery"]["images"]]
                 }
             except (TypeError, KeyError):
                 continue
         for key, post in hotels_data.items():
-            images = post['images']
-            medias = []
-            for i in range(6):
-                temp = choice(images)
-                images.remove(temp)
-                medias.append(InputMediaPhoto(media=temp))
-            bot.send_media_group(message.chat.id, medias)
-            bot.send_message(message.chat.id,
-                             f'Название: {post["name"]}\n'
-                             f'Адрес: {post["address"]}\n'
-                             f'Расстояние до центра: {post["distance"]} {post["unit"].lower()}\n'
-                             f'Стоимость проживания в сутки: {post["price"]} {data["currency"]}')
+            bot_send_data(message, post)
+        User(user_id=message.chat.id,
+             datetime=datetime.datetime.now(),
+             city=citydb,
+             req_data=hotels_data).save()
+        bot.delete_state(message.from_user.id, message.chat.id)
+
+
+def bot_send_data(message: Message, post):
+    'Формат результата, который отправляется пользователю.'
+    images = post['images']
+    medias = []
+    for i in range(6):
+        temp = choice(images)
+        images.remove(temp)
+        medias.append(InputMediaPhoto(media=temp))
+    bot.send_media_group(message.chat.id, medias)
+    bot.send_message(message.chat.id,
+                     f'Название: {post["name"]}\n'
+                     f'Адрес: {post["address"]}\n'
+                     f'Расстояние до центра: {post["distance"]} {post["unit"].lower()}\n'
+                     f'Стоимость проживания в сутки: {post["price"]} {post["currency"]}')
+
+
+@bot.message_handler(commands=["history"])
+def bot_history(message: Message):
+    new_dict = dict()
+    try:
+        user_data = [x for x in User.select().where(User.user_id == message.chat.id)]
+        if len(user_data) > 0:
+            for i in range(len(user_data)):
+                bot.send_message(message.chat.id,
+                                 f"{i + 1}) Дата запроса: {user_data[i].datetime}, запрашиваемый город: "
+                                 f"{user_data[i].city}")
+                new_dict[str(i + 1)] = (user_data[i].datetime, user_data[i].city)
+            bot.send_message(message.chat.id, "Введите номер запроса чтобы вывести более подробную информацию")
+            bot.register_next_step_handler(message, get_hist_info, new_dict)
+        else:
+            raise Exception
+    except:
+        bot.send_message(message.chat.id, "История пуста.")
+
+
+def get_hist_info(message: Message, user_data_dict):
+    input = message.text.strip()
+    user_data = User.get(datetime=user_data_dict[input][0], city=user_data_dict[input][1])
+    req_data = eval(user_data.req_data)
+    for key, post in req_data.items():
+        bot_send_data(message, post)
