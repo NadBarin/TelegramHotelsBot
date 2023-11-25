@@ -38,10 +38,11 @@ def get_city(message: Message) -> None:
         try:
             querystring = {"q": city}
             cities = api_request('locations/v3/search', querystring, 'GET')
-            if cities is None:
+            if cities == 'null':
                 raise Exception
         except:
-            bot.send_message(message.from_user.id, 'Кажется есть какая то проблема.')
+            bot.send_message(message.from_user.id, 'Кажется мы не нашли такого города, попробуйте ещё раз.')
+            bot.register_next_step_handler(message, get_city)
         else:
             global citydb
             citydb = city
@@ -137,7 +138,7 @@ def get_adults(message: Message) -> None:
     '''Запрашивает и записывает количество взрслых для которых нужны номера.'''
     data["rooms"] = [{}]
     adults = message.text.strip()
-    if not adults.isdigit() or adults == '0':
+    if not adults.isdigit() or int(adults) < 1:
         bot.send_message(message.from_user.id,
                          'Количество взрослых людей должно быть указанно одной цифрой > 0. Попробуйте ещё раз')
         bot.register_next_step_handler(message, get_adults)
@@ -155,9 +156,9 @@ counter = 0
 def get_children(message: Message) -> None:
     '''Запрашивает кличество детей и переходит к функции, которая запишет возрасты.'''
     children = message.text.strip()
-    if not children.isdigit():
+    if not children.isdigit() or int(children) < 0:
         bot.send_message(message.from_user.id,
-                         'Количество детей должно быть указанно одной цифрой. Попробуйте ещё раз')
+                         'Количество детей должно быть указанно одной цифрой >=0. Попробуйте ещё раз')
         bot.register_next_step_handler(message, get_children)
     else:
         if children != '0':
@@ -166,10 +167,9 @@ def get_children(message: Message) -> None:
                              f'Введите возраст 1-го ребёнка.')
             bot.register_next_step_handler(message, get_children_age_steps, children)
         else:
-            bot.set_state(message.from_user.id, QuestionsStates.currency, message.chat.id)
+            bot.set_state(message.from_user.id, QuestionsStates.price_min, message.chat.id)
             bot.send_message(message.from_user.id,
-                             'Хорошо. Теперь латинскими буквами введите аббревиатуру валюты, которой хотите платить '
-                             'за проживание.')
+                             'Хорошо. Теперь введите минимальную цену за проживание в сутки(в $).')
 
 
 counter: int = 1
@@ -178,7 +178,7 @@ counter: int = 1
 def get_children_age_steps(message: Message, children: int):
     "Запрашивает и записывает возрасты детей."
     age = message.text.strip()
-    if age.isdigit():
+    if age.isdigit() and int(age) >= 0:
         data["rooms"][0]["children"].append({"age": int(age)})
         global counter
         if counter < int(children):
@@ -188,29 +188,13 @@ def get_children_age_steps(message: Message, children: int):
             bot.register_next_step_handler(message, get_children_age_steps, children)
         else:
             counter = 1
-            bot.set_state(message.from_user.id, QuestionsStates.currency, message.chat.id)
+            bot.set_state(message.from_user.id, QuestionsStates.price_min, message.chat.id)
             bot.send_message(message.from_user.id,
-                             'Хорошо. Теперь латинскими буквами введите аббревиатуру валюты, которой хотите платить '
-                             'за проживание.')
+                             'Хорошо. Теперь введите минимальную цену за проживание в сутки(в $).')
     else:
         bot.send_message(message.from_user.id,
-                         'Возраст должен быть указан одной цифрой. Попробуйте ещё раз')
+                         'Возраст должен быть указан одной цифрой >= 0. Попробуйте ещё раз')
         bot.register_next_step_handler(message, get_children_age_steps, children)
-
-
-@bot.message_handler(state=QuestionsStates.currency)
-def get_currency(message: Message) -> None:
-    '''Запрашивает валюту.'''
-    currency = message.text.strip().upper()
-    if len(currency) > 3 or not currency.isalpha():
-        bot.send_message(message.from_user.id,
-                         'Валюта должна быть указана тремя латинскими буквами. Попробуйте ещё раз.')
-        bot.register_next_step_handler(message, get_currency)
-    else:
-        data["currency"] = currency
-        bot.set_state(message.from_user.id, QuestionsStates.price_min, message.chat.id)
-        bot.send_message(message.from_user.id,
-                         'Хорошо. Теперь введите минимальную цену за проживание.')
 
 
 @bot.message_handler(state=QuestionsStates.price_min)
@@ -227,7 +211,7 @@ def get_price_min(message: Message) -> None:
         data["filters"]["price"]["min"] = int(price_min)
         bot.set_state(message.from_user.id, QuestionsStates.price_max, message.chat.id)
         bot.send_message(message.from_user.id,
-                         'Хорошо. Теперь введите максимальную цену за проживание.')
+                         'Хорошо. Теперь введите максимальную цену за проживание в сутки(в $).')
 
 
 @bot.message_handler(state=QuestionsStates.price_max)
@@ -267,36 +251,42 @@ def get_results_size(message: Message):
         with open("file.txt", "w", encoding='UTF-8') as file:
             json.dump(response, file, indent=4, sort_keys=True)
         hotels_data = {}
-        for hotel in response['data']['propertySearch']['properties']:
-            try:
-                data_for_detales = {
-                    "currency": data["currency"],
-                    "eapid": 1,
-                    "propertyId": hotel["id"]
-                }
-                response_for_detales = api_request('properties/v2/get-summary', data_for_detales, 'POST')
-                # print(json.dumps(response_for_detales["data"]["propertyInfo"], indent=4, sort_keys=True))
-                hotels_data[hotel["id"]] = {
-                    'name': hotel["name"],
-                    'id': hotel["id"],
-                    'address': response_for_detales["data"]["propertyInfo"]["summary"]["location"]["address"][
-                        "addressLine"],
-                    'distance': hotel["destinationInfo"]["distanceFromDestination"]["value"],
-                    'unit': hotel["destinationInfo"]["distanceFromDestination"]["unit"],
-                    'price': round(hotel['price']['lead']['amount'], 2),
-                    'currency': data['currency'],
-                    'images': [url["image"]["url"] for url in
-                               response_for_detales['data']['propertyInfo']["propertyGallery"]["images"]]
-                }
-            except (TypeError, KeyError):
-                continue
-        for key, post in hotels_data.items():
-            bot_send_data(message, post)
-        User(user_id=message.chat.id,
-             datetime=datetime.datetime.now(),
-             city=citydb,
-             req_data=hotels_data).save()
-        bot.delete_state(message.from_user.id, message.chat.id)
+        if response == 'null':
+            bot.send_message(message.from_user.id,
+                             'Кажется по вашему запросу ничего не нашлось. '
+                             'Попробуйте ввести заново данные и поменять что то в процессе ввода.')
+        else:
+            for hotel in response['data']['propertySearch']['properties']:
+                try:
+                    data_for_detales = {
+                        "eapid": 1,
+                        "propertyId": hotel["id"]
+                    }
+                    response_for_detales = api_request('properties/v2/get-summary', data_for_detales, 'POST')
+                    # print(json.dumps(response_for_detales["data"]["propertyInfo"], indent=4, sort_keys=True))
+                    with open("file2.txt", "w", encoding='UTF-8') as file2:
+                        json.dump(response_for_detales, file2, indent=4, sort_keys=True)
+                    hotels_data[hotel["id"]] = {
+                        'name': hotel["name"],
+                        'id': hotel["id"],
+                        'address': response_for_detales["data"]["propertyInfo"]["summary"]["location"]["address"][
+                            "addressLine"],
+                        'distance': hotel["destinationInfo"]["distanceFromDestination"]["value"],
+                        'unit': hotel["destinationInfo"]["distanceFromDestination"]["unit"],
+                        'price': round(hotel['price']['lead']['amount'], 2),
+                        'currency': hotel['price']['lead']["currencyInfo"]["code"],
+                        'images': [url["image"]["url"] for url in
+                                   response_for_detales['data']['propertyInfo']["propertyGallery"]["images"]]
+                    }
+                except (TypeError, KeyError):
+                    continue
+            for key, post in hotels_data.items():
+                bot_send_data(message, post)
+            User(user_id=message.chat.id,
+                 datetime=datetime.datetime.now(),
+                 city=citydb,
+                 req_data=hotels_data).save()
+            bot.delete_state(message.from_user.id, message.chat.id)
 
 
 def bot_send_data(message: Message, post):
@@ -336,7 +326,11 @@ def bot_history(message: Message):
 
 def get_hist_info(message: Message, user_data_dict):
     input = message.text.strip()
-    user_data = User.get(datetime=user_data_dict[input][0], city=user_data_dict[input][1])
-    req_data = eval(user_data.req_data)
-    for key, post in req_data.items():
-        bot_send_data(message, post)
+    if input not in user_data_dict.keys():
+        bot.send_message(message.chat.id, "Такого номера запоса не существует. Попробуйте ещё раз.")
+        bot.register_next_step_handler(message, get_hist_info, user_data_dict)
+    else:
+        user_data = User.get(datetime=user_data_dict[input][0], city=user_data_dict[input][1])
+        req_data = eval(user_data.req_data)
+        for key, post in req_data.items():
+            bot_send_data(message, post)

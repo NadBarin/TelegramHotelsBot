@@ -1,9 +1,10 @@
 from requests import get, codes, post
+from config_data.config import RAPID_API_KEY, RAPID_API_HOST
 
 headers = {
     "content-type": "application/json",
-    "X-RapidAPI-Key": "6ebe2836f8msh38e1f5542c2aef7p18d486jsndac0197ed05d",
-    "X-RapidAPI-Host": "hotels4.p.rapidapi.com"
+    "X-RapidAPI-Key": RAPID_API_KEY,
+    "X-RapidAPI-Host": RAPID_API_HOST
 }
 
 
