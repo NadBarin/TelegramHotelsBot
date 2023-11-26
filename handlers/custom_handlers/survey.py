@@ -1,16 +1,14 @@
 import datetime
-import peewee
 from database.history import User
 from loader import bot
 from states.questions_states import QuestionsStates
 from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from handlers.custom_handlers.universal_req import api_request
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
+from keyboards.inline.cities_keyboard import cities_keyboard
 from random import choice
-import json
 
 data = {"eapid": 1}
-citydb = ''
 
 
 @bot.message_handler(commands=['lowprice', 'guest_rating', 'bestdeal'])
@@ -44,15 +42,8 @@ def get_city(message: Message) -> None:
             bot.send_message(message.from_user.id, 'Кажется мы не нашли такого города, попробуйте ещё раз.')
             bot.register_next_step_handler(message, get_city)
         else:
-            global citydb
-            citydb = city
-            keyboards_cities = InlineKeyboardMarkup()
-            for item in cities['sr']:
-                if "gaiaId" in item.keys():
-                    keyboards_cities.add(
-                        InlineKeyboardButton(text=item["regionNames"]["fullName"],
-                                             callback_data='gaiaId.' + item["gaiaId"]))
-            bot.send_message(message.from_user.id, 'Пожалуйста уточните местоположение.', reply_markup=keyboards_cities)
+            data["citydb"] = city
+            cities_keyboard(message, cities)
     else:
         bot.send_message(message.from_user.id,
                          'Название города должно содержать в себе только буквы. Попробуйте ещё раз')
@@ -79,9 +70,11 @@ def cal_out(message: Message):
                      reply_markup=calendar)
 
 
+
+
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1))
 def cal1(c):
-    '''Проходит все этапы календаря и записывает результат в data.'''
+    '''Для календаря вьезда. Проходит все этапы календаря и записывает результат в data.'''
     result, key, step = DetailedTelegramCalendar(calendar_id=1, locale='ru').process(c.data)
     if not result and key:
         if LSTEP[step] == 'month':
@@ -100,15 +93,15 @@ def cal1(c):
         data["checkInDate"]["month"] = result.month
         data["checkInDate"]["day"] = result.day
         bot.edit_message_text(f"Вы выбрали {result} как дату вьезда.",
-                              c.message.chat.id,
-                              c.message.message_id)
+                                c.message.chat.id,
+                                c.message.message_id)
         cal_out(c.message)
 
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=2))
 def cal2(c):
-    '''Проходит все этапы календаря и записывает результат в data. После этого делает запрос инфрмации про
-    количество взрослых.'''
+    '''Для календаря выезда. Проходит все этапы календаря и записывает результат в data.
+    После этого делает запрос инфрмации про количество взрослых.'''
     result, key, step = DetailedTelegramCalendar(calendar_id=2, locale='ru').process(c.data)
     if not result and key:
         if LSTEP[step] == 'month':
@@ -127,8 +120,9 @@ def cal2(c):
         data["checkOutDate"]["month"] = result.month
         data["checkOutDate"]["day"] = result.day
         bot.edit_message_text(f"Вы выбрали {result} как дату выезда.",
-                              c.message.chat.id,
-                              c.message.message_id)
+                                c.message.chat.id,
+                                c.message.message_id)
+
         bot.set_state(c.message.chat.id, QuestionsStates.adults)
         bot.send_message(c.message.chat.id, 'Введите колличество мест для взрослых.')
 
@@ -172,22 +166,17 @@ def get_children(message: Message) -> None:
                              'Хорошо. Теперь введите минимальную цену за проживание в сутки(в $).')
 
 
-counter: int = 1
-
-
-def get_children_age_steps(message: Message, children: int):
+def get_children_age_steps(message: Message, children: int, counter: int = 1):
     "Запрашивает и записывает возрасты детей."
     age = message.text.strip()
     if age.isdigit() and int(age) >= 0:
         data["rooms"][0]["children"].append({"age": int(age)})
-        global counter
         if counter < int(children):
             counter += 1
             bot.send_message(message.from_user.id,
                              f'Введите возраст {counter}-го ребёнка.')
-            bot.register_next_step_handler(message, get_children_age_steps, children)
+            bot.register_next_step_handler(message, get_children_age_steps, children, counter)
         else:
-            counter = 1
             bot.set_state(message.from_user.id, QuestionsStates.price_min, message.chat.id)
             bot.send_message(message.from_user.id,
                              'Хорошо. Теперь введите минимальную цену за проживание в сутки(в $).')
@@ -216,7 +205,7 @@ def get_price_min(message: Message) -> None:
 
 @bot.message_handler(state=QuestionsStates.price_max)
 def get_price_max(message: Message) -> None:
-    '''Запрашивает минимальную цену за проживание.'''
+    '''Запрашивает максимальную цену за проживание.'''
     price_max = message.text.strip()
     if not price_max.isdigit():
         bot.send_message(message.from_user.id,
@@ -236,7 +225,8 @@ def get_price_max(message: Message) -> None:
 
 @bot.message_handler(state=QuestionsStates.resultsSize)
 def get_results_size(message: Message):
-    """Запрашивает количество результатов, которые нужно вывести. Проводит поиск нужных данных по введённым данным. Отправляет результат пользователю."""
+    """Запрашивает количество результатов, которые нужно вывести. Проводит поиск нужных данных по введённым данным.
+    Отправляет результат пользователю."""
     size = message.text.strip()
     if not size.isdigit():
         bot.send_message(message.from_user.id,
@@ -247,9 +237,8 @@ def get_results_size(message: Message):
         data["resultsSize"] = int(size)
         bot.send_message(message.from_user.id,
                          'Хорошая работа! Сейчас попробуем найти что то подходящее.')
+        citydb = data.pop("citydb")
         response = api_request('properties/v2/list', data, 'POST')
-        with open("file.txt", "w", encoding='UTF-8') as file:
-            json.dump(response, file, indent=4, sort_keys=True)
         hotels_data = {}
         if response == 'null':
             bot.send_message(message.from_user.id,
@@ -263,9 +252,7 @@ def get_results_size(message: Message):
                         "propertyId": hotel["id"]
                     }
                     response_for_detales = api_request('properties/v2/get-summary', data_for_detales, 'POST')
-                    # print(json.dumps(response_for_detales["data"]["propertyInfo"], indent=4, sort_keys=True))
-                    with open("file2.txt", "w", encoding='UTF-8') as file2:
-                        json.dump(response_for_detales, file2, indent=4, sort_keys=True)
+
                     hotels_data[hotel["id"]] = {
                         'name': hotel["name"],
                         'id': hotel["id"],
