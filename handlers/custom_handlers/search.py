@@ -10,6 +10,7 @@ def bot_lowprice(message: Message):
     bot.reply_to(message, f"Посмотрим низкие цены! Введите город в котором хотите рассмотреть отели.")
 
 
+@bot.message_handler(content_types=['text'])
 def bot_city_req(message: Message):
     bot.reply_to(message, f"Обработка запроса может занять некоторое время.")
     city = message.text.strip().lower()
