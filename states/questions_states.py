@@ -9,4 +9,5 @@ class QuestionsStates(StatesGroup):
     price_min = State()
     price_max = State()
     resultsSize = State()
+    history = State()
 

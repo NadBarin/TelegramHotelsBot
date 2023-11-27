@@ -1,4 +1,5 @@
 import peewee
+from playhouse.sqlite_ext import JSONField
 
 db = peewee.SqliteDatabase('data.db')
 
@@ -15,7 +16,7 @@ class User(BaseModel):
     user_id = peewee.IntegerField()
     datetime = peewee.DateTimeField()
     city = peewee.CharField(max_length=100)
-    req_data = peewee.TextField()
+    req_data = JSONField()
 
 
 with db:

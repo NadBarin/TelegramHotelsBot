@@ -2,19 +2,21 @@ import datetime
 from database.history import User
 from loader import bot
 from states.questions_states import QuestionsStates
-from telebot.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
+from telebot.types import Message, InputMediaPhoto
 from handlers.custom_handlers.universal_req import api_request
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
 from keyboards.inline.cities_keyboard import cities_keyboard
 from random import choice
 
-data = {"eapid": 1}
+
+data = {}
 
 
 @bot.message_handler(commands=['lowprice', 'guest_rating', 'bestdeal'])
 def survey(message: Message) -> None:
     '''Начало опроса. Проверяется команда и сохряняется нужный параметр сортировки поиска. Меняется состояние и
     запрашивается параметр поиска: город.'''
+    data["eapid"] = 1
     if message.text == '/lowprice':
         data['sort'] = "PRICE_LOW_TO_HIGH"
     elif message.text == '/guest_rating':
@@ -40,14 +42,12 @@ def get_city(message: Message) -> None:
                 raise Exception
         except:
             bot.send_message(message.from_user.id, 'Кажется мы не нашли такого города, попробуйте ещё раз.')
-            bot.register_next_step_handler(message, get_city)
         else:
             data["citydb"] = city
             cities_keyboard(message, cities)
     else:
         bot.send_message(message.from_user.id,
                          'Название города должно содержать в себе только буквы. Попробуйте ещё раз')
-        bot.register_next_step_handler(message, get_city)
 
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('gaiaId.'))
@@ -68,8 +68,6 @@ def cal_out(message: Message):
     bot.send_message(message.chat.id,
                      f"Теперь нужно выбрать дату планируемого выезда. Выберете год",
                      reply_markup=calendar)
-
-
 
 
 @bot.callback_query_handler(func=DetailedTelegramCalendar.func(calendar_id=1))
@@ -93,8 +91,8 @@ def cal1(c):
         data["checkInDate"]["month"] = result.month
         data["checkInDate"]["day"] = result.day
         bot.edit_message_text(f"Вы выбрали {result} как дату вьезда.",
-                                c.message.chat.id,
-                                c.message.message_id)
+                              c.message.chat.id,
+                              c.message.message_id)
         cal_out(c.message)
 
 
@@ -120,8 +118,8 @@ def cal2(c):
         data["checkOutDate"]["month"] = result.month
         data["checkOutDate"]["day"] = result.day
         bot.edit_message_text(f"Вы выбрали {result} как дату выезда.",
-                                c.message.chat.id,
-                                c.message.message_id)
+                              c.message.chat.id,
+                              c.message.message_id)
 
         bot.set_state(c.message.chat.id, QuestionsStates.adults)
         bot.send_message(c.message.chat.id, 'Введите колличество мест для взрослых.')
@@ -135,15 +133,11 @@ def get_adults(message: Message) -> None:
     if not adults.isdigit() or int(adults) < 1:
         bot.send_message(message.from_user.id,
                          'Количество взрослых людей должно быть указанно одной цифрой > 0. Попробуйте ещё раз')
-        bot.register_next_step_handler(message, get_adults)
     else:
         data["rooms"][0]["adults"] = int(adults)
         bot.set_state(message.from_user.id, QuestionsStates.children, message.chat.id)
         bot.send_message(message.from_user.id,
                          'Хорошо. Теперь введите(цифрой) на сколько детей нужны места.')
-
-
-counter = 0
 
 
 @bot.message_handler(state=QuestionsStates.children)
@@ -153,7 +147,6 @@ def get_children(message: Message) -> None:
     if not children.isdigit() or int(children) < 0:
         bot.send_message(message.from_user.id,
                          'Количество детей должно быть указанно одной цифрой >=0. Попробуйте ещё раз')
-        bot.register_next_step_handler(message, get_children)
     else:
         if children != '0':
             data["rooms"][0]["children"] = []
@@ -183,7 +176,7 @@ def get_children_age_steps(message: Message, children: int, counter: int = 1):
     else:
         bot.send_message(message.from_user.id,
                          'Возраст должен быть указан одной цифрой >= 0. Попробуйте ещё раз')
-        bot.register_next_step_handler(message, get_children_age_steps, children)
+        bot.register_next_step_handler(message, get_children_age_steps, children, counter)
 
 
 @bot.message_handler(state=QuestionsStates.price_min)
@@ -193,7 +186,6 @@ def get_price_min(message: Message) -> None:
     if not price_min.isdigit():
         bot.send_message(message.from_user.id,
                          'Цена должна быть указана цифрой. Попробуйте ещё раз.')
-        bot.register_next_step_handler(message, get_price_min)
     else:
         data["filters"] = {}
         data["filters"]["price"] = {}
@@ -210,7 +202,6 @@ def get_price_max(message: Message) -> None:
     if not price_max.isdigit():
         bot.send_message(message.from_user.id,
                          'Цена должна быть указана цифрой. Попробуйте ещё раз.')
-        bot.register_next_step_handler(message, get_price_max)
     elif data["filters"]["price"]["min"] > int(price_max):
         bot.send_message(message.from_user.id,
                          'Максимальная цена должна быть больше минимальной. попробуйте ещё раз.')
@@ -303,21 +294,21 @@ def bot_history(message: Message):
                                  f"{i + 1}) Дата запроса: {user_data[i].datetime}, запрашиваемый город: "
                                  f"{user_data[i].city}")
                 new_dict[str(i + 1)] = (user_data[i].datetime, user_data[i].city)
+            bot.set_state(message.from_user.id, QuestionsStates.history, message.chat.id, new_dict)
             bot.send_message(message.chat.id, "Введите номер запроса чтобы вывести более подробную информацию")
-            bot.register_next_step_handler(message, get_hist_info, new_dict)
         else:
             raise Exception
     except:
         bot.send_message(message.chat.id, "История пуста.")
 
 
+@bot.message_handler(state=QuestionsStates.history)
 def get_hist_info(message: Message, user_data_dict):
     input = message.text.strip()
     if input not in user_data_dict.keys():
         bot.send_message(message.chat.id, "Такого номера запоса не существует. Попробуйте ещё раз.")
-        bot.register_next_step_handler(message, get_hist_info, user_data_dict)
     else:
         user_data = User.get(datetime=user_data_dict[input][0], city=user_data_dict[input][1])
-        req_data = eval(user_data.req_data)
-        for key, post in req_data.items():
+        for key, post in user_data.req_data.items():
             bot_send_data(message, post)
+        bot.delete_state(message.from_user.id, message.chat.id)
