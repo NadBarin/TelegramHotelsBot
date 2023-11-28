@@ -1,5 +1,6 @@
 from requests import get, codes, post
 from config_data.config import RAPID_API_KEY, RAPID_API_HOST
+from loader import bot
 
 headers = {
     "content-type": "application/json",
@@ -35,10 +36,12 @@ def get_request(url, params):
             params=params,
             timeout=15
         )
-        if response.status_code == codes.ok:
+        if response.status_code == 200:
             return response.json()
+        else:
+            raise Exception
     except:
-        return "Ошибка"
+        return "null"
 
 
 def post_request(url, params):
@@ -49,7 +52,23 @@ def post_request(url, params):
             json=params,
             timeout=15
         )
-        if response.status_code == codes.ok:
+        if response.status_code == 200:
             return response.json()
+        else:
+            raise Exception
     except:
-        return "Ошибка"
+        return "null"
+
+
+def request_handling(message, link, querystring, method_type):
+    try:
+        request = api_request(link, querystring, method_type)
+        if request == 'null':
+            raise Exception
+        else:
+            return request
+    except:
+        bot.send_message(message.from_user.id, 'Кажется по вашему запросу ничего не нашлось.'
+                                 'Попробуйте ввести заново данные и поменять что то в процессе ввода.')
+        return 0
+
