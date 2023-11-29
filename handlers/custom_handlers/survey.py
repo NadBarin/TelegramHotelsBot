@@ -3,12 +3,9 @@ from database.history import save, select, get_data
 from loader import bot
 from states.questions_states import QuestionsStates
 from telebot.types import Message, InputMediaPhoto
-from utils.site_API.universal_req import request_handling
+from utils.site_API.request_handling import request_ans_handling_final, request_ans_handling_cities
 from telegram_bot_calendar import DetailedTelegramCalendar, LSTEP
-from keyboards.inline.cities_keyboard import cities_keyboard
 from random import choice
-
-
 
 
 @bot.message_handler(commands=['lowprice', 'guest_rating', 'bestdeal'])
@@ -35,12 +32,7 @@ def get_city(message: Message) -> None:
     с полным названием локаций)'''
     city = message.text.strip().lower()
     if not city.isdigit():
-        querystring = {"q": city}
-        cities = request_handling(message, 'locations/v3/search', querystring, 'GET')
-        if cities:
-            with bot.retrieve_data(message.from_user.id) as data:
-                data["city"] = city
-            cities_keyboard(message, cities)
+        request_ans_handling_cities(message, city)
     else:
         bot.send_message(message.from_user.id,
                          'Название города должно содержать в себе только буквы. Попробуйте ещё раз')
@@ -224,66 +216,13 @@ def get_results_size(message: Message):
             data["resultsSize"] = int(size)
             bot.send_message(message.from_user.id,
                              'Хорошая работа! Сейчас попробуем найти что то подходящее.')
-            data_list = {
-                "currency": "USD",
-                "eapid": 1,
-                "destination": {"regionId": data['gaiaId']},
-                "checkInDate": {
-                    "day": data['checkInDate'].day,
-                    "month": data['checkInDate'].month,
-                    "year": data['checkInDate'].year
-                },
-                "checkOutDate": {
-                    "day": data['checkOutDate'].day,
-                    "month": data['checkOutDate'].month,
-                    "year": data['checkOutDate'].year,
-                },
-                "rooms": [
-                    {
-                        "adults": data['adults'],
-                        "children": data['children']
-                    }
-                ],
-                "resultsStartingIndex": 0,
-                "resultsSize": data['resultsSize'],
-                "sort": data['sort'],
-                "filters": {"price": {
-                    "max": data['price_max'],
-                    "min": data['price_min']
-                }}
-            }
-
-            response = request_handling(message, 'properties/v2/list', data_list, 'POST')
-            hotels_data = {}
-            if response:
-                for hotel in response['data']['propertySearch']['properties']:
-                    try:
-                        data_for_detales = {
-                            "eapid": 1,
-                            "propertyId": hotel["id"]
-                        }
-                        response_for_detales = request_handling(message, 'properties/v2/get-summary', data_for_detales, 'POST')
-                        if response_for_detales:
-                            hotels_data[hotel["id"]] = {
-                                'name': hotel["name"],
-                                'id': hotel["id"],
-                                'address': response_for_detales["data"]["propertyInfo"]["summary"]["location"]["address"][
-                                    "addressLine"],
-                                'distance': hotel["destinationInfo"]["distanceFromDestination"]["value"],
-                                'unit': hotel["destinationInfo"]["distanceFromDestination"]["unit"],
-                                'price': round(hotel['price']['lead']['amount'], 2),
-                                'currency': hotel['price']['lead']["currencyInfo"]["code"],
-                                'images': [url["image"]["url"] for url in
-                                           response_for_detales['data']['propertyInfo']["propertyGallery"]["images"]]
-                            }
-                    except (TypeError, KeyError):
-                        continue
-                for key, post in hotels_data.items():
-                    bot_send_data(message, post)
-                save(chat_id=message.chat.id,
-                     datetime=datetime.datetime.now(),
-                     city=data["city"].title(),
-                     req_data=hotels_data)
+            hotels_data = request_ans_handling_final(message, data)
+            for key, post in hotels_data.items():
+                bot_send_data(message, post)
+            save(chat_id=message.chat.id,
+                 datetime=datetime.datetime.now(),
+                 city=data["city"].title(),
+                 req_data=hotels_data)
     bot.delete_state(message.from_user.id, message.chat.id)
 
 
