@@ -1,4 +1,4 @@
-from requests import get, codes, post
+from requests import get, post
 from config_data.config import RAPID_API_KEY, RAPID_API_HOST
 
 headers = {
@@ -35,10 +35,12 @@ def get_request(url, params):
             params=params,
             timeout=15
         )
-        if response.status_code == codes.ok:
+        if response.status_code == 200:
             return response.json()
+        else:
+            raise Exception
     except:
-        return "Ошибка"
+        return "null"
 
 
 def post_request(url, params):
@@ -49,7 +51,9 @@ def post_request(url, params):
             json=params,
             timeout=15
         )
-        if response.status_code == codes.ok:
+        if response.status_code == 200:
             return response.json()
+        else:
+            raise Exception
     except:
-        return "Ошибка"
+        return "null"
